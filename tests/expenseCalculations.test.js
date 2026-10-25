@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  calculateAvailableBudget,
+  calculateCategoryBudgetStatus,
   calculateCategoryRemaining,
   calculateCategorySpent,
   calculateTotalBudget,
   getCategorySummaries,
   roundToCents,
+  reallocateCategoryBudget,
   sortExpensesByCategory,
   sortExpensesByDate,
 } from '../src/utils/expenseCalculations.js';
@@ -62,6 +65,148 @@ describe('calculateCategoryRemaining', () => {
 
   it('allows a negative remaining balance when over budget', () => {
     expect(calculateCategoryRemaining(categories[1], expenses)).toBe(-10);
+  });
+});
+
+describe('budget reallocation', () => {
+  const reallocationCategories = [
+    { id: 'source', name: 'Source', budget: 100 },
+    { id: 'destination', name: 'Destination', budget: 50 },
+  ];
+  const reallocationExpenses = [
+    { id: 'spent', amount: 70, categoryId: 'source' },
+    { id: 'other', amount: 5, categoryId: 'destination' },
+  ];
+
+  it('reports only unspent budget as available', () => {
+    expect(calculateAvailableBudget(reallocationCategories[0], reallocationExpenses)).toBe(30);
+    expect(calculateAvailableBudget({ id: 'over', budget: 10 }, [
+      { amount: 12, categoryId: 'over' },
+    ])).toBe(0);
+  });
+
+  it('transfers funds without changing the inputs or expenses', () => {
+    const originalCategories = structuredClone(reallocationCategories);
+    const originalExpenses = structuredClone(reallocationExpenses);
+    const result = reallocateCategoryBudget(
+      reallocationCategories,
+      reallocationExpenses,
+      'source',
+      'destination',
+      '12.34'
+    );
+
+    expect(result).toEqual({
+      success: true,
+      categories: [
+        { id: 'source', name: 'Source', budget: 87.66 },
+        { id: 'destination', name: 'Destination', budget: 62.34 },
+      ],
+    });
+    expect(calculateTotalBudget(result.categories)).toBe(calculateTotalBudget(reallocationCategories));
+    expect(reallocationCategories).toEqual(originalCategories);
+    expect(reallocationExpenses).toEqual(originalExpenses);
+  });
+
+  it.each([
+    ['', 'invalid_amount'],
+    ['0', 'invalid_amount'],
+    ['-1', 'invalid_amount'],
+    ['abc', 'invalid_amount'],
+    ['1.234', 'invalid_amount'],
+    ['1e2', 'invalid_amount'],
+  ])('rejects invalid transfer amount %s', (amount, error) => {
+    expect(
+      reallocateCategoryBudget(
+        reallocationCategories,
+        reallocationExpenses,
+        'source',
+        'destination',
+        amount
+      )
+    ).toEqual({ success: false, error });
+  });
+
+  it('rejects missing, identical, and unknown categories', () => {
+    expect(reallocateCategoryBudget(reallocationCategories, [], '', 'destination', '1')).toEqual({
+      success: false,
+      error: 'select_categories',
+    });
+    expect(
+      reallocateCategoryBudget(reallocationCategories, [], 'source', 'source', '1')
+    ).toEqual({ success: false, error: 'same_category' });
+    expect(
+      reallocateCategoryBudget(reallocationCategories, [], 'missing', 'destination', '1')
+    ).toEqual({ success: false, error: 'unknown_category' });
+  });
+
+  it('rejects transfers that exceed the source unspent budget', () => {
+    expect(
+      reallocateCategoryBudget(
+        reallocationCategories,
+        reallocationExpenses,
+        'source',
+        'destination',
+        '30.01'
+      )
+    ).toEqual({ success: false, error: 'insufficient_funds', available: 30 });
+  });
+
+  it('rejects transfers from a category with no available funds', () => {
+    expect(
+      reallocateCategoryBudget(
+        [{ id: 'source', budget: 10 }, { id: 'destination', budget: 0 }],
+        [{ amount: 10, categoryId: 'source' }],
+        'source',
+        'destination',
+        '1'
+      )
+    ).toEqual({ success: false, error: 'no_available_funds', available: 0 });
+  });
+});
+
+describe('calculateCategoryBudgetStatus', () => {
+  it('reports normal status below 80% using the actual percentage', () => {
+    expect(calculateCategoryBudgetStatus(79.99, 100)).toEqual({
+      percentage: 79.99,
+      progress: 79.99,
+      status: 'normal',
+    });
+  });
+
+  it('reports a warning at exactly 80% and below 100%', () => {
+    expect(calculateCategoryBudgetStatus(80, 100)).toEqual({
+      percentage: 80,
+      progress: 80,
+      status: 'warning',
+    });
+    expect(calculateCategoryBudgetStatus(99.99, 100).status).toBe('warning');
+  });
+
+  it('reports an alert at 100% or more and caps visual progress at 100%', () => {
+    expect(calculateCategoryBudgetStatus(100, 100)).toEqual({
+      percentage: 100,
+      progress: 100,
+      status: 'alert',
+    });
+    expect(calculateCategoryBudgetStatus(125, 100)).toEqual({
+      percentage: 125,
+      progress: 100,
+      status: 'alert',
+    });
+  });
+
+  it('handles zero budgets without producing a non-finite percentage', () => {
+    expect(calculateCategoryBudgetStatus(0, 0)).toEqual({
+      percentage: 0,
+      progress: 0,
+      status: 'normal',
+    });
+    expect(calculateCategoryBudgetStatus(10, 0)).toEqual({
+      percentage: null,
+      progress: 100,
+      status: 'alert',
+    });
   });
 });
 

@@ -9,6 +9,11 @@ function readStorage(key) {
   return JSON.parse(localStorage.getItem(key));
 }
 
+function setBudgetData(categories, expenses) {
+  localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(categories));
+  localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(expenses));
+}
+
 function getCategoryRow(name) {
   const table = screen.getByRole('region', { name: 'Category Budgets' });
   return within(table).getByRole('row', { name: new RegExp(name) });
@@ -168,6 +173,202 @@ describe('App', () => {
   });
 
   describe('category budgets', () => {
+    it('reallocates available funds, preserves total budget and expenses, and saves the budgets', async () => {
+      const user = userEvent.setup();
+      const expenses = [
+        { id: 'e1', description: 'Source purchase', amount: 70, categoryId: 'source', date: '2026-01-01' },
+      ];
+      setBudgetData(
+        [
+          { id: 'source', name: 'Source', icon: '🅰️', budget: 100 },
+          { id: 'destination', name: 'Destination', icon: '🅱️', budget: 50 },
+        ],
+        expenses
+      );
+      render(<App />);
+
+      await user.selectOptions(screen.getByLabelText('From category'), 'source');
+      await user.selectOptions(screen.getByLabelText('To category'), 'destination');
+      await user.type(screen.getByLabelText('Transfer amount (₦)'), '20');
+      await user.click(screen.getByRole('button', { name: 'Transfer funds' }));
+
+      expect(screen.getByText('Transferred ₦20.00 from Source to Destination.')).toHaveAttribute(
+        'role',
+        'status'
+      );
+      expect(within(getCategoryRow('Source')).getByText('₦80.00')).toBeInTheDocument();
+      expect(within(getCategoryRow('Source')).getByText('₦10.00')).toBeInTheDocument();
+      expect(within(getCategoryRow('Destination')).getAllByText('₦70.00')).toHaveLength(2);
+      expect(screen.getByText('₦150.00')).toBeInTheDocument();
+      expect(readStorage(STORAGE_KEYS.categories).map(({ budget }) => budget)).toEqual([80, 70]);
+      expect(readStorage(STORAGE_KEYS.expenses)).toEqual(expenses);
+      expect(screen.getByLabelText('Transfer amount (₦)')).toHaveValue('');
+    });
+
+    it('validates transfer selections and amount without changing budgets', async () => {
+      const user = userEvent.setup();
+      const categories = [
+        { id: 'source', name: 'Source', icon: '🅰️', budget: 100 },
+        { id: 'destination', name: 'Destination', icon: '🅱️', budget: 100 },
+        { id: 'blocked', name: 'Blocked', icon: '🚫', budget: 20 },
+      ];
+      const expenses = [
+        { id: 'e1', description: 'Source spend', amount: 80, categoryId: 'source', date: '2026-01-01' },
+        { id: 'e2', description: 'Blocked spend', amount: 20, categoryId: 'blocked', date: '2026-01-02' },
+      ];
+      setBudgetData(categories, expenses);
+      render(<App />);
+
+      const sourceSelect = screen.getByLabelText('From category');
+      const destinationSelect = screen.getByLabelText('To category');
+      const amountInput = screen.getByLabelText('Transfer amount (₦)');
+      const submit = screen.getByRole('button', { name: 'Transfer funds' });
+      const expectError = async (message) => {
+        await user.click(submit);
+        expect(screen.getByText(message)).toHaveAttribute('role', 'alert');
+      };
+
+      expect(
+        within(sourceSelect).getByRole('option', { name: /Blocked — ₦0.00 available/ })
+      ).toBeDisabled();
+      await expectError('Select both a source and destination category.');
+
+      await user.selectOptions(sourceSelect, 'source');
+      await user.selectOptions(destinationSelect, 'source');
+      await user.type(amountInput, '1');
+      await expectError('Choose different source and destination categories.');
+
+      await user.selectOptions(destinationSelect, 'destination');
+      for (const invalidAmount of ['0', '-1', 'abc', '1.234']) {
+        await user.clear(amountInput);
+        await user.type(amountInput, invalidAmount);
+        await expectError('Enter a positive amount with no more than two decimal places.');
+      }
+
+      await user.clear(amountInput);
+      await user.type(amountInput, '20.01');
+      await expectError('Transfer amount exceeds available funds (₦20.00).');
+
+      expect(readStorage(STORAGE_KEYS.categories)).toEqual(categories);
+      expect(readStorage(STORAGE_KEYS.expenses)).toEqual(expenses);
+    });
+
+    it('explains when no category has unspent budget and does not offer transfers with fewer than two categories', () => {
+      setBudgetData(
+        [{ id: 'source', name: 'Source', icon: '🅰️', budget: 10 }],
+        [{ id: 'e1', description: 'Source fully spent', amount: 10, categoryId: 'source', date: '2026-01-01' }]
+      );
+      const { unmount } = render(<App />);
+      expect(screen.queryByRole('heading', { name: 'Reallocate Budget' })).not.toBeInTheDocument();
+
+      unmount();
+      setBudgetData(
+        [
+          { id: 'source', name: 'Source', icon: '🅰️', budget: 10 },
+          { id: 'destination', name: 'Destination', icon: '🅱️', budget: 5 },
+        ],
+        [
+          { id: 'e1', description: 'Source fully spent', amount: 10, categoryId: 'source', date: '2026-01-01' },
+          { id: 'e2', description: 'Destination fully spent', amount: 5, categoryId: 'destination', date: '2026-01-02' },
+        ]
+      );
+      render(<App />);
+      expect(screen.getByText('No category has unspent budget available to transfer.')).toBeInTheDocument();
+      expect(
+        within(screen.getByLabelText('From category')).getByRole('option', {
+          name: /Source — ₦0.00 available/,
+        })
+      ).toBeDisabled();
+    });
+
+    it('renders accessible progress bars with accurate, capped values', () => {
+      setBudgetData(
+        [
+          { id: 'food', name: 'Food', icon: '🍽️', budget: 100 },
+          { id: 'fun', name: 'Fun', icon: '🎮', budget: 0 },
+          { id: 'bills', name: 'Bills', icon: '🧾', budget: 100 },
+        ],
+        [
+          { id: 'e1', description: 'Lunch', amount: 35, categoryId: 'food', date: '2026-01-01' },
+          { id: 'e2', description: 'Medicine', amount: 10, categoryId: 'fun', date: '2026-01-02' },
+          { id: 'e3', description: 'Utilities', amount: 125, categoryId: 'bills', date: '2026-01-03' },
+        ]
+      );
+      render(<App />);
+
+      const foodProgress = within(getCategoryRow('Food')).getByRole('progressbar', {
+        name: 'Food budget usage',
+      });
+      expect(foodProgress).toHaveAttribute('max', '100');
+      expect(foodProgress).toHaveAttribute('value', '35');
+      expect(foodProgress).toHaveAttribute('aria-valuetext', '35% of ₦100.00 budget used');
+      expect(within(getCategoryRow('Food')).getByText('₦35.00 of ₦100.00 (35%)')).toBeInTheDocument();
+
+      const zeroBudgetProgress = within(getCategoryRow('Fun')).getByRole('progressbar', {
+        name: 'Fun budget usage',
+      });
+      expect(zeroBudgetProgress).toHaveAttribute('value', '100');
+      expect(zeroBudgetProgress).toHaveAttribute(
+        'aria-valuetext',
+        '₦10.00 spent against a zero budget'
+      );
+
+      const overBudgetProgress = within(getCategoryRow('Bills')).getByRole('progressbar', {
+        name: 'Bills budget usage',
+      });
+      expect(overBudgetProgress).toHaveAttribute('value', '100');
+      expect(overBudgetProgress).toHaveAttribute(
+        'aria-valuetext',
+        '125% of ₦100.00 budget used'
+      );
+      expect(within(getCategoryRow('Bills')).getByText('₦125.00 of ₦100.00 (125%)')).toBeInTheDocument();
+    });
+
+    it('shows warnings at 80% and alerts at 100%, but no status below 80%', () => {
+      setBudgetData(
+        [
+          { id: 'food', name: 'Food', icon: '🍽️', budget: 100 },
+          { id: 'fun', name: 'Fun', icon: '🎮', budget: 100 },
+          { id: 'bills', name: 'Bills', icon: '🧾', budget: 100 },
+        ],
+        [
+          { id: 'e1', description: 'Food', amount: 79.99, categoryId: 'food', date: '2026-01-01' },
+          { id: 'e2', description: 'Fun', amount: 80, categoryId: 'fun', date: '2026-01-02' },
+          { id: 'e3', description: 'Bills', amount: 100, categoryId: 'bills', date: '2026-01-03' },
+        ]
+      );
+      render(<App />);
+
+      expect(within(getCategoryRow('Food')).queryByRole('status')).not.toBeInTheDocument();
+      expect(within(getCategoryRow('Fun')).getByRole('status')).toHaveTextContent(
+        'Warning: 80% of budget used.'
+      );
+      expect(within(getCategoryRow('Bills')).getByRole('alert')).toHaveTextContent(
+        'Alert: 100% of budget used.'
+      );
+    });
+
+    it('replaces the warning with an alert when spending reaches the budget', async () => {
+      const user = userEvent.setup();
+      setBudgetData(
+        [{ id: 'food', name: 'Food', icon: '🍽️', budget: 100 }],
+        [{ id: 'e1', description: 'Groceries', amount: 80, categoryId: 'food', date: '2026-01-01' }]
+      );
+      render(<App />);
+
+      let row = getCategoryRow('Food');
+      expect(within(row).getByRole('status')).toHaveTextContent('Warning: 80% of budget used.');
+
+      await user.type(screen.getByLabelText('Description'), 'Produce');
+      await user.type(screen.getByLabelText('Amount (₦)'), '20');
+      await user.selectOptions(screen.getByLabelText('Category'), 'Food');
+      await user.click(screen.getByRole('button', { name: /add expense/i }));
+
+      row = getCategoryRow('Food');
+      expect(within(row).queryByRole('status')).not.toBeInTheDocument();
+      expect(within(row).getByRole('alert')).toHaveTextContent('Alert: 100% of budget used.');
+    });
+
     it('updates a category budget and saves it', async () => {
       const user = userEvent.setup();
       render(<App />);
@@ -198,7 +399,9 @@ describe('App', () => {
       await user.type(input, '-5');
       await user.click(screen.getByRole('button', { name: 'Save' }));
 
-      expect(screen.getByRole('alert')).toHaveTextContent('Budget must be a number of 0 or more.');
+      expect(
+        within(getCategoryRow('Shopping')).getByText('Budget must be a number of 0 or more.')
+      ).toHaveAttribute('role', 'alert');
       expect(readStorage(STORAGE_KEYS.categories).find((c) => c.id === 'shopping').budget).toBe(30000);
     });
 

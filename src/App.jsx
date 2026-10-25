@@ -9,6 +9,7 @@ import {
   createSampleCategories,
   createSampleExpenses,
 } from './data/sampleData.js';
+import { reallocateCategoryBudget } from './utils/expenseCalculations.js';
 
 function generateExpenseId() {
   return `exp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -35,6 +36,14 @@ function App() {
     );
   }
 
+  function reallocateBudget(sourceId, destinationId, amount) {
+    const result = reallocateCategoryBudget(categories, expenses, sourceId, destinationId, amount);
+    if (result.success) {
+      setCategories(result.categories);
+    }
+    return result;
+  }
+
   function resetDemoData() {
     const confirmed = window.confirm(
       'Reset all data to the original demo data? Your added expenses and budget changes will be lost.'
@@ -56,6 +65,7 @@ function App() {
           categories={categories}
           expenses={expenses}
           onUpdateBudget={updateCategoryBudget}
+          onReallocateBudget={reallocateBudget}
         />
 
         <section className="section" aria-labelledby="expenses-heading">
