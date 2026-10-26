@@ -5,6 +5,7 @@ import {
   calculateCategoryRemaining,
   calculateCategorySpent,
   calculateTotalBudget,
+  calculateTotalExpenses,
   getCategorySummaries,
   roundToCents,
   reallocateCategoryBudget,
@@ -33,6 +34,20 @@ const expenses = [
 describe('calculateTotalBudget', () => {
   it('adds up all category budgets', () => {
     expect(calculateTotalBudget(categories)).toBe(150);
+  });
+
+  describe('calculateTotalExpenses', () => {
+    it('sums current expenses and rounds the result to cents', () => {
+      expect(calculateTotalExpenses(expenses)).toBe(102.75);
+      expect(calculateTotalExpenses([
+        { amount: 0.1 },
+        { amount: 0.2 },
+      ])).toBe(0.3);
+    });
+
+    it('returns zero when there are no expenses', () => {
+      expect(calculateTotalExpenses([])).toBe(0);
+    });
   });
 
   it('returns 0 when there are no categories', () => {
@@ -248,6 +263,15 @@ describe('getSpendingByCategory', () => {
     expect(categories).toEqual(originalCategories);
     expect(expenses).toEqual(originalExpenses);
   });
+
+  it('returns no plotted categories when there is no spending', () => {
+    expect(
+      getSpendingByCategory(categories, [
+        { id: 'zero', amount: 0, categoryId: 'food' },
+        { id: 'unknown', amount: 10, categoryId: 'missing' },
+      ])
+    ).toEqual([]);
+  });
 });
 
 describe('getSpendingTrend', () => {
@@ -284,6 +308,21 @@ describe('getSpendingTrend', () => {
       { key: '2026-03', total: 0 },
       { key: '2026-04', total: 30 },
     ]);
+  });
+
+  it('keeps daily buckets at exactly 60 days and switches to months at 61 days', () => {
+    const expensesAtBoundary = [
+      { id: 'start', amount: 1, date: '2026-01-01' },
+      { id: 'day-60', amount: 2, date: '2026-03-02' },
+    ];
+    const expensesAfterBoundary = [
+      ...expensesAtBoundary,
+      { id: 'day-61', amount: 3, date: '2026-03-03' },
+    ];
+
+    expect(getSpendingTrend(expensesAtBoundary)).toMatchObject({ granularity: 'day' });
+    expect(getSpendingTrend(expensesAtBoundary).buckets).toHaveLength(61);
+    expect(getSpendingTrend(expensesAfterBoundary)).toMatchObject({ granularity: 'month' });
   });
 
   it('returns an empty daily trend when there are no valid expense dates', () => {
