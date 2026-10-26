@@ -17,6 +17,7 @@ import {
   createSampleExpenses,
 } from '../src/data/sampleData.js';
 import { formatCurrency, formatDate, parseISODate, toISODate } from '../src/utils/formatters.js';
+import { getSpendingByCategory, getSpendingTrend } from '../src/utils/spendingInsights.js';
 
 const categories = [
   { id: 'food', name: 'Food', budget: 100 },
@@ -222,6 +223,77 @@ describe('getCategorySummaries', () => {
     const copy = structuredClone(categories);
     getCategorySummaries(categories, expenses);
     expect(categories).toEqual(copy);
+  });
+});
+
+describe('getSpendingByCategory', () => {
+  it('returns only categories with spending, ordered by amount', () => {
+    const result = getSpendingByCategory(
+      [...categories, { id: 'travel', name: 'Travel', budget: 0 }],
+      expenses
+    );
+
+    expect(result.map(({ id, spent }) => ({ id, spent }))).toEqual([
+      { id: 'fun', spent: 60 },
+      { id: 'food', spent: 42.75 },
+    ]);
+  });
+
+  it('does not modify the input arrays', () => {
+    const originalCategories = structuredClone(categories);
+    const originalExpenses = structuredClone(expenses);
+
+    getSpendingByCategory(categories, expenses);
+
+    expect(categories).toEqual(originalCategories);
+    expect(expenses).toEqual(originalExpenses);
+  });
+});
+
+describe('getSpendingTrend', () => {
+  it('groups expenses by calendar date for a span of 60 days or less', () => {
+    const result = getSpendingTrend([
+      { id: 'later', amount: 0.2, date: '2026-03-02' },
+      { id: 'same-day', amount: 0.1, date: '2026-03-02' },
+      { id: 'earlier', amount: 5, date: '2026-01-01' },
+    ]);
+
+    expect(result.granularity).toBe('day');
+    expect(result.buckets.map(({ key, total }) => ({ key, total }))).toEqual([
+      { key: '2026-01-01', total: 5 },
+      { key: '2026-03-02', total: 0.3 },
+    ]);
+  });
+
+  it('groups expenses by calendar month when the date span exceeds 60 days', () => {
+    const result = getSpendingTrend([
+      { id: 'jan', amount: 10, date: '2026-01-31' },
+      { id: 'feb', amount: 20, date: '2026-02-01' },
+      { id: 'mar', amount: 30, date: '2026-04-02' },
+    ]);
+
+    expect(result.granularity).toBe('month');
+    expect(result.buckets.map(({ key, total }) => ({ key, total }))).toEqual([
+      { key: '2026-01', total: 10 },
+      { key: '2026-02', total: 20 },
+      { key: '2026-04', total: 30 },
+    ]);
+  });
+
+  it('returns an empty daily trend when there are no valid expense dates', () => {
+    expect(getSpendingTrend([])).toEqual({ granularity: 'day', buckets: [] });
+    expect(getSpendingTrend([{ id: 'invalid', amount: 12, date: '2026-02-30' }])).toEqual({
+      granularity: 'day',
+      buckets: [],
+    });
+  });
+
+  it('does not modify its input expenses', () => {
+    const input = structuredClone(expenses);
+
+    getSpendingTrend(expenses);
+
+    expect(expenses).toEqual(input);
   });
 });
 
