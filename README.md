@@ -15,7 +15,7 @@ Everything runs in your browser. There is no backend, no login, and no API keys.
 | [React](https://react.dev) | Building the user interface from components |
 | JavaScript | The programming language (no TypeScript) |
 | [Vite](https://vite.dev) | Development server and production build |
-| CSS | Styling (one file: `src/styles.css`) |
+| CSS and inline SVG | Styling and lightweight, responsive spending charts |
 | Browser `localStorage` | Saving your data between page refreshes |
 | [Vitest](https://vitest.dev) + [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/) | Automated tests |
 | npm | Installing packages and running scripts |
@@ -70,23 +70,26 @@ npm test
 
 All tests in the main suite should pass.
 
-The **regression test** lives in `tests/regression/` and runs separately:
+The dashboard-total **regression test** lives in `tests/regression/` and runs separately:
 
 ```bash
 npm run test:bug
 ```
 
-In the starter project this test **is expected to fail**. You will use it in the debugging exercise. Once the issue is fixed, it should pass, and `npm test` should still pass too.
+This targeted suite is separate from `npm test`; both should pass.
 
 ## Features
 
-- **Dashboard**: total allocated budget, total expenses, remaining balance, and a breakdown of spending by category.
+- **Dashboard**: total allocated budget, total expenses, remaining balance, and Spending Insights.
+- **Spending Insights**: horizontal bars compare spending across categories; a trend chart shows daily totals for spans up to 60 days and monthly totals for longer spans. Expand the data details under each chart to see exact values.
 - **Category budgets**: six categories, each with an allocated budget, the amount spent, and the remaining balance. Click **Edit** to change a category's budget. The remaining balance can go negative when you overspend.
 - **Add expenses**: enter a description, amount, category, and date. The form checks that every field is valid.
 - **View expenses**: all expenses are listed newest first. Use the **Sort** menu to show oldest first, or to group them by category.
 - **Delete expenses**: click **Delete** on any expense and confirm.
 - **Saved automatically**: changes are kept in `localStorage`, so they survive a page refresh.
 - **Reset Demo Data**: restores the original sample data (see below).
+
+Spending Insights uses the same expense data as the expense list and updates automatically when expenses are added or deleted. If there are no expenses, it displays a prompt to add one instead of empty charts. The total remains visible as ₦0.00. Expenses are not currently editable through the interface.
 
 ### Sample data
 
@@ -120,8 +123,11 @@ If the page ever fails to load, you can also clear the data manually. Open your 
 │   ├── styles.css              # All application styles
 │   ├── components/
 │   │   ├── Header.jsx          # App title and subtitle
-│   │   ├── Dashboard.jsx       # Summary cards + spending breakdown
+│   │   ├── Dashboard.jsx       # Dashboard summaries and Spending Insights
 │   │   ├── SummaryCard.jsx     # One summary statistic card
+│   │   ├── SpendingInsights.jsx # Insights section and empty state
+│   │   ├── CategorySpendChart.jsx # Horizontal category comparison chart
+│   │   ├── SpendingTrendChart.jsx # Daily/monthly spending trend chart
 │   │   ├── CategoryBudgets.jsx # Category table with budget editing
 │   │   ├── ExpenseForm.jsx     # Add-expense form with validation
 │   │   └── ExpenseList.jsx     # Expense table with sorting and delete
@@ -131,12 +137,17 @@ If the page ever fails to load, you can also clear the data manually. Open your 
 │   │   └── useLocalStorage.js  # useState that also saves to localStorage
 │   └── utils/
 │       ├── expenseCalculations.js # Totals, per-category spending, sorting
+│       ├── spendingInsights.js # Category and timeline aggregation
 │       └── formatters.js       # Currency and date helpers
 ├── tests/
 │   ├── setup.js                # Test setup (jest-dom matchers, cleanup)
 │   ├── expenseCalculations.test.js
 │   ├── components.test.jsx
+│   ├── spendingInsights.test.jsx
 │   └── regression/             # Targeted regression test (npm run test:bug)
+├── SPEC.md                     # Spending Insights requirements
+├── PLAN.md                     # Spending Insights technical plan
+├── TESTING.md                  # Spending Insights test coverage and results
 ├── vite.config.js              # Vite + Vitest configuration
 └── vitest.regression.config.js # Vitest config for the regression test
 ```
@@ -145,8 +156,8 @@ If the page ever fails to load, you can also clear the data manually. Open your 
 
 1. `App.jsx` keeps two pieces of state, `expenses` and `categories`, using the `useLocalStorage` hook.
 2. On first launch, the hook fills them with sample data from `sampleData.js`. After that it loads whatever was saved.
-3. `App.jsx` passes the data down to the components as props, together with functions to change it (`addExpense`, `deleteExpense`, `updateCategoryBudget`).
-4. Components use helpers in `utils/expenseCalculations.js` to work out totals. Values like "spent" and "remaining" are **calculated**, not stored.
+3. `App.jsx` passes the data down to the dashboard and other components as props, together with functions to change it (`addExpense`, `deleteExpense`, `updateCategoryBudget`).
+4. Dashboard components use helpers in `utils/expenseCalculations.js` and `utils/spendingInsights.js` to calculate totals, category spending, and time buckets. These insight values are **derived**, not stored separately.
 5. Any change to state is saved back to `localStorage` automatically.
 
 ### Stored data format
