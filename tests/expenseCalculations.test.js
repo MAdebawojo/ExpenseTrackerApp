@@ -261,8 +261,13 @@ describe('getSpendingTrend', () => {
     expect(result.granularity).toBe('day');
     expect(result.buckets.map(({ key, total }) => ({ key, total }))).toEqual([
       { key: '2026-01-01', total: 5 },
+      ...Array.from({ length: 59 }, (_, index) => ({
+        key: new Date(Date.UTC(2026, 0, index + 2)).toISOString().slice(0, 10),
+        total: 0,
+      })),
       { key: '2026-03-02', total: 0.3 },
     ]);
+    expect(result.buckets).toHaveLength(61);
   });
 
   it('groups expenses by calendar month when the date span exceeds 60 days', () => {
@@ -276,6 +281,7 @@ describe('getSpendingTrend', () => {
     expect(result.buckets.map(({ key, total }) => ({ key, total }))).toEqual([
       { key: '2026-01', total: 10 },
       { key: '2026-02', total: 20 },
+      { key: '2026-03', total: 0 },
       { key: '2026-04', total: 30 },
     ]);
   });

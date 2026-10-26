@@ -3,7 +3,8 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../src/App.jsx';
 import { STORAGE_KEYS, createSampleExpenses } from '../src/data/sampleData.js';
-import { toISODate } from '../src/utils/formatters.js';
+import { calculateTotalExpenses } from '../src/utils/expenseCalculations.js';
+import { formatCurrency, toISODate } from '../src/utils/formatters.js';
 
 function readStorage(key) {
   return JSON.parse(localStorage.getItem(key));
@@ -59,14 +60,56 @@ describe('App', () => {
   });
 
   describe('dashboard', () => {
-    it('shows the total allocated budget and a breakdown for every category', () => {
+    it('shows dashboard summaries and category spending insights', () => {
       render(<App />);
       const dashboard = screen.getByRole('region', { name: 'Dashboard' });
+      const categoryChart = within(dashboard).getByRole('img', {
+        name: /Spending by category/,
+      });
 
       expect(within(dashboard).getByText('₦270,000.00')).toBeInTheDocument();
-      expect(within(dashboard).getByText('Food & Dining')).toBeInTheDocument();
-      expect(within(dashboard).getByText('₦85,498.98')).toBeInTheDocument();
-      expect(within(dashboard).getByText('Health & Wellness')).toBeInTheDocument();
+      expect(
+        within(dashboard).getByRole('heading', { name: 'Spending Insights' })
+      ).toBeInTheDocument();
+      expect(categoryChart).toBeInTheDocument();
+      expect(within(categoryChart).getByText('Food & Dining')).toBeInTheDocument();
+      expect(within(categoryChart).getByText('₦85,498.98')).toBeInTheDocument();
+      expect(within(categoryChart).getByText('Health & Wellness')).toBeInTheDocument();
+    });
+
+    it('shows an empty state instead of charts when there are no expenses', () => {
+      localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify([]));
+      render(<App />);
+
+      expect(
+        screen.getByText('Add an expense to see your category breakdown and spending trend.')
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('img', { name: /Spending by category/ })
+      ).not.toBeInTheDocument();
+      const totalExpensesCard = screen
+        .getByRole('heading', { name: 'Total Expenses' })
+        .closest('article');
+      expect(within(totalExpensesCard).getByText('₦0.00')).toBeInTheDocument();
+    });
+
+    it('provides trend values in an accessible data table', async () => {
+      const user = userEvent.setup();
+      setBudgetData(
+        [{ id: 'food', name: 'Food', icon: '🍽️', budget: 100 }],
+        [
+          { id: 'e1', description: 'Lunch', amount: 15, categoryId: 'food', date: '2026-03-01' },
+          { id: 'e2', description: 'Dinner', amount: 25, categoryId: 'food', date: '2026-03-03' },
+        ]
+      );
+      render(<App />);
+
+      await user.click(screen.getByText('View trend data'));
+
+      const trendTable = screen.getByRole('table', { name: 'Daily spending totals' });
+      expect(within(trendTable).getByText('₦15.00')).toBeInTheDocument();
+      expect(within(trendTable).getByText('₦0.00')).toBeInTheDocument();
+      expect(within(trendTable).getByText('₦25.00')).toBeInTheDocument();
     });
   });
 
@@ -82,6 +125,9 @@ describe('App', () => {
 
       // Newest first, so the new expense (dated today) is near the top.
       expect(within(getExpenseTable()).getByText('Team lunch')).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('img', { name: /Spending by category/ })).getByText('₦17,763.00')
+      ).toBeInTheDocument();
 
       // Entertainment: 15,262.50 + 2,500.50 = 17,763.00 spent, 20,000 - 17,763 = 2,237.00 remaining.
       const row = getCategoryRow('Entertainment');
@@ -97,6 +143,18 @@ describe('App', () => {
         date: toISODate(new Date()),
       });
       expect(saved.at(-1).id).toEqual(expect.any(String));
+      const totalCard = screen.getByRole('heading', { name: 'Total Expenses' }).closest('article');
+      expect(
+        within(totalCard).getByText(formatCurrency(calculateTotalExpenses(saved)))
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByText('View trend data'));
+      const trendRows = within(screen.getByRole('table', { name: 'Daily spending totals' }))
+        .getAllByRole('row');
+      const todaySpending = saved
+        .filter((expense) => expense.date === toISODate(new Date()))
+        .reduce((total, expense) => total + expense.amount, 0);
+      expect(trendRows.at(-1)).toHaveTextContent(formatCurrency(todaySpending));
     });
 
     it('shows validation errors and does not add an invalid expense', async () => {
@@ -157,7 +215,13 @@ describe('App', () => {
       const row = getCategoryRow('Shopping');
       expect(within(row).getByText('₦19,848.80')).toBeInTheDocument();
       expect(within(row).getByText('₦10,151.20')).toBeInTheDocument();
-      expect(readStorage(STORAGE_KEYS.expenses).map((e) => e.id)).not.toContain('exp-012');
+      expect(
+        within(screen.getByRole('img', { name: /Spending by category/ })).getByText('₦19,848.80')
+      ).toBeInTheDocument();
+      const saved = readStorage(STORAGE_KEYS.expenses);
+      expect(saved.map((e) => e.id)).not.toContain('exp-012');
+      const totalCard = screen.getByRole('heading', { name: 'Total Expenses' }).closest('article');
+      expect(within(totalCard).getByText(formatCurrency(calculateTotalExpenses(saved)))).toBeInTheDocument();
     });
 
     it('keeps the expense when the user cancels', async () => {

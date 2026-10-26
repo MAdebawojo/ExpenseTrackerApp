@@ -1,5 +1,5 @@
 import { getCategorySummaries, roundToCents } from './expenseCalculations.js';
-import { formatDate, parseISODate } from './formatters.js';
+import { formatDate, parseISODate, toISODate } from './formatters.js';
 
 const DAILY_TREND_MAX_DAYS = 60;
 
@@ -36,19 +36,35 @@ export function getSpendingTrend(expenses) {
     totalsByKey.set(key, (totalsByKey.get(key) ?? 0) + Number(expense.amount));
   });
 
-  const buckets = [...totalsByKey.entries()]
-    .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-    .map(([key, amount]) => {
-      const date = parseISODate(granularity === 'day' ? key : `${key}-01`);
-      return {
-        key,
-        label:
-          granularity === 'day'
-            ? formatDate(key)
-            : date.toLocaleDateString('en-NG', { month: 'short', year: 'numeric' }),
-        total: roundToCents(amount),
-      };
-    });
+  const keys = [];
+  if (granularity === 'day') {
+    const date = new Date(firstDate);
+    while (date <= lastDate) {
+      keys.push(toISODate(date));
+      date.setDate(date.getDate() + 1);
+    }
+  } else {
+    const date = new Date(firstDate.getFullYear(), firstDate.getMonth(), 1);
+    const end = new Date(lastDate.getFullYear(), lastDate.getMonth(), 1);
+    while (date <= end) {
+      keys.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+      date.setMonth(date.getMonth() + 1);
+    }
+  }
+
+  const buckets = keys.map((key) => {
+    const amount = totalsByKey.get(key) ?? 0;
+    const dateKey = granularity === 'day' ? key : `${key}-01`;
+    const date = parseISODate(dateKey);
+    return {
+      key,
+      label:
+        granularity === 'day'
+          ? formatDate(key)
+          : date.toLocaleDateString('en-NG', { month: 'short', year: 'numeric' }),
+      total: roundToCents(amount),
+    };
+  });
 
   return { granularity, buckets };
 }

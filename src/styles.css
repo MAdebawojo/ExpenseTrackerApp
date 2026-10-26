@@ -314,6 +314,123 @@ main.container {
   margin-right: 0;
 }
 
+/* ---------- Spending insights ---------- */
+
+.insights-section {
+  margin-top: 28px;
+}
+
+.insights-section__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.insights-card {
+  min-width: 0;
+}
+
+.insights-card .card__title {
+  margin-bottom: 6px;
+}
+
+.chart-caption {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+
+.insights-chart-scroll {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.category-chart {
+  display: block;
+  width: 620px;
+  max-width: none;
+}
+
+.trend-chart {
+  display: block;
+}
+
+.chart-label,
+.chart-value,
+.chart-axis-label {
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-label {
+  fill: var(--color-text);
+  font-size: 13px;
+}
+
+.chart-value {
+  fill: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chart-axis-label {
+  fill: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.chart-track {
+  fill: var(--color-primary-soft);
+}
+
+.chart-bar--category {
+  fill: var(--color-primary);
+}
+
+.chart-bar--trend {
+  fill: var(--color-teal);
+}
+
+.chart-grid-line {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.insights-data-details {
+  margin-top: 12px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.insights-data-details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.chart-data-table {
+  margin-top: 8px;
+}
+
+.chart-data-table caption {
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--color-text-muted);
+}
+
+.insights-chart-empty,
+.insights-empty-state {
+  color: var(--color-text-muted);
+}
+
+.insights-empty-state {
+  text-align: center;
+}
+
 /* ---------- Tables ---------- */
 
 .data-table {
@@ -593,6 +710,10 @@ select[aria-invalid='true'] {
 
 @media (max-width: 960px) {
   .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .insights-grid {
     grid-template-columns: 1fr;
   }
 
